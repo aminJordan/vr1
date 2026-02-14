@@ -1,13 +1,23 @@
 import * as THREE from 'three';
 import { MindARThree } from 'mindar-image-three';
 
+async function loadVideo(path) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.src = path;
+    video.setAttribute('crossorigin', 'anonymous');
+    video.setAttribute('playsinline', '');
+    video.addEventListener('loadedmetadata', () => resolve(video));
+    video.addEventListener('error', (err) => reject(err));
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
 
   // تابع برای گرفتن دسترسی دوربین
   async function requestCameraAccess() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      // وقتی اجازه داده شد، همه چیز بسته میشه (می‌خوایم فقط اجازه بگیریم)
       stream.getTracks().forEach(track => track.stop());
       return true;
     } catch (err) {
@@ -18,36 +28,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const hasAccess = await requestCameraAccess();
-  if (!hasAccess) return; // اگر اجازه داده نشد، AR اجرا نمی‌شود
+  if (!hasAccess) return;
 
-  // شروع AR بعد از گرفتن دسترسی
+  // شروع AR بعد از گرفتن دسترسی با فیلترهای smoothing
   const mindarThree = new MindARThree({
-    container: document.body,
+    container: document.querySelector("#ar-container"),
     imageTargetSrc: './assets/targets/notopia.mind',
     maxTrack: 1,
+    filterMinCF: 0.00001,    // کاهش لرزش
+    filterBeta: 100000,    // افزایش نرمی حرکت
     uiLoading: "yes",
     uiError: "yes",
-    uiScanning: "yes"
+    uiScanning: "no"
   });
 
   const { renderer, scene, camera } = mindarThree;
 
-  // یک plane ساده برای تست
-  const geometry = new THREE.PlaneGeometry(1, 1);
-  const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 });
+  const video = await loadVideo("./assets/videos/notopia.mp4");
+  const texture = new THREE.VideoTexture(video);
+
+  const geometry = new THREE.PlaneGeometry(1, 216/384);
+  const material = new THREE.MeshBasicMaterial({map: texture});
   const plane = new THREE.Mesh(geometry, material);
 
   const anchor = mindarThree.addAnchor(0);
   anchor.group.add(plane);
 
-  try {
-    await mindarThree.start();
-    renderer.setAnimationLoop(() => {
-      renderer.render(scene, camera);
-    });
-  } catch (err) {
-    console.error("AR start failed:", err);
-    alert("Cannot start AR. Make sure camera permission is allowed and browser supports WebXR/WebAR.");
+  anchor.onTargetFound = () => {
+    video.play();
   }
+  anchor.onTargetLost = () => {
+    video.pause();
+  }
+  video.addEventListener('play', () => {
+    video.currentTime = 0;
+  });
+
+  await mindarThree.start();
+  renderer.setAnimationLoop(() => {
+    renderer.render(scene, camera);
+  });
 
 });
