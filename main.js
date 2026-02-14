@@ -69,4 +69,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.render(scene, camera);
   });
 
+<<<<<<< HEAD
 });
+=======
+});
+>>>>>>> 13f438ebc1ee3ca39a958978ff30148335573688
