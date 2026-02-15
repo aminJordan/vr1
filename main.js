@@ -35,8 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     container: document.querySelector("#ar-container"),
     imageTargetSrc: './assets/targets/notopia3.mind',
     maxTrack: 1,
-    filterMinCF: 0.00001,    // کاهش لرزش
-    filterBeta: 100000,    // افزایش نرمی حرکت
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no"
