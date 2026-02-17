@@ -33,8 +33,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // شروع AR بعد از گرفتن دسترسی با فیلترهای smoothing
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
-    imageTargetSrc: './assets/targets/notopia3.mind',
+    imageTargetSrc: './assets/targets/notopia.mind',
+    filterMinCF: 0.0001, // کاهش این عدد لرزش را در حالت سکون حذف می‌کند
+    filterBeta: 0.001,    // تنظیم این عدد حرکت را نرم‌تر می‌کند
     maxTrack: 1,
+    missTolerance: 5,
+    warmupTolerance: 5,
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no"
