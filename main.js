@@ -34,8 +34,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
     imageTargetSrc: './assets/targets/notopia.mind',
-    filterMinCF: 0.0001, // کاهش این عدد لرزش را در حالت سکون حذف می‌کند
-    filterBeta: 0.001,    // تنظیم این عدد حرکت را نرم‌تر می‌کند
+    filterMinCF: 0.00025, // کاهش این عدد لرزش را در حالت سکون حذف می‌کند
+    filterBeta: 0.0025,    // تنظیم این عدد حرکت را نرم‌تر می‌کند
     maxTrack: 1,
     missTolerance: 5,
     warmupTolerance: 5,
