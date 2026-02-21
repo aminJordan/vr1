@@ -16,7 +16,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function requestCameraAccess() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      });
       stream.getTracks().forEach(track => track.stop());
       return true;
     } catch (err) {
@@ -39,7 +44,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     warmupTolerance: 10,
     uiLoading: "yes",
     uiError: "yes",
-    uiScanning: "no"
+    uiScanning: "no",
+    videoSettings: {
+      width: { ideal: 640 },
+      height: { ideal: 480 }
+    }
   });
 
   const { renderer, scene, camera } = mindarThree;
@@ -54,14 +63,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const anchor = mindarThree.addAnchor(0);
   anchor.group.add(plane);
 
-  // موقعیت و چرخش نرم‌شده
   const smoothPosition = new THREE.Vector3();
   const smoothQuaternion = new THREE.Quaternion();
   let isTracking = false;
 
   anchor.onTargetFound = () => {
     isTracking = true;
-    // مقداردهی اولیه با موقعیت فعلی تا jump نداشته باشیم
     smoothPosition.copy(anchor.group.position);
     smoothQuaternion.copy(anchor.group.quaternion);
     video.play();
@@ -80,9 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   renderer.setAnimationLoop(() => {
     if (isTracking) {
-      // lerp برای نرم کردن موقعیت و چرخش
-      smoothPosition.lerp(anchor.group.position, 0.2);
-      smoothQuaternion.slerp(anchor.group.quaternion, 0.2);
+      smoothPosition.lerp(anchor.group.position, 0.1);
+      smoothQuaternion.slerp(anchor.group.quaternion, 0.1);
 
       anchor.group.position.copy(smoothPosition);
       anchor.group.quaternion.copy(smoothQuaternion);
