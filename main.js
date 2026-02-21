@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
-    imageTargetSrc: './assets/targets/notopia3.mind',
+    imageTargetSrc: './assets/targets/pedar.mind',
     filterMinCF: 0.002,
     filterBeta: 0.0005,
     maxTrack: 1,
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const video = await loadVideo("./assets/videos/notopia.mp4");
   const texture = new THREE.VideoTexture(video);
 
-  const geometry = new THREE.PlaneGeometry(1, 3868/3930);
+  const geometry = new THREE.PlaneGeometry(1, 1);
   const material = new THREE.MeshBasicMaterial({ map: texture });
   const plane = new THREE.Mesh(geometry, material);
 
