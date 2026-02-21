@@ -18,8 +18,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 }
+          width: { ideal: 320 },
+          height: { ideal: 240 }
         }
       });
       stream.getTracks().forEach(track => track.stop());
