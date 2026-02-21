@@ -14,7 +14,6 @@ async function loadVideo(path) {
 
 document.addEventListener('DOMContentLoaded', async () => {
 
-  // تابع برای گرفتن دسترسی دوربین
   async function requestCameraAccess() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -30,15 +29,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hasAccess = await requestCameraAccess();
   if (!hasAccess) return;
 
-  // شروع AR بعد از گرفتن دسترسی با فیلترهای smoothing
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
-    imageTargetSrc: './assets/targets/notopia.mind',
-    filterMinCF: 0.00025, // کاهش این عدد لرزش را در حالت سکون حذف می‌کند
-    filterBeta: 0.0025,    // تنظیم این عدد حرکت را نرم‌تر می‌کند
+    imageTargetSrc: './assets/targets/notopia3.mind',
+    filterMinCF: 0.002,
+    filterBeta: 0.0005,
     maxTrack: 1,
-    missTolerance: 5,
-    warmupTolerance: 5,
+    missTolerance: 10,
+    warmupTolerance: 10,
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no"
@@ -49,25 +47,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   const video = await loadVideo("./assets/videos/notopia.mp4");
   const texture = new THREE.VideoTexture(video);
 
-  const geometry = new THREE.PlaneGeometry(1, 216/384);
-  const material = new THREE.MeshBasicMaterial({map: texture});
+  const geometry = new THREE.PlaneGeometry(1, 3868/3930);
+  const material = new THREE.MeshBasicMaterial({ map: texture });
   const plane = new THREE.Mesh(geometry, material);
 
   const anchor = mindarThree.addAnchor(0);
   anchor.group.add(plane);
 
+  // موقعیت و چرخش نرم‌شده
+  const smoothPosition = new THREE.Vector3();
+  const smoothQuaternion = new THREE.Quaternion();
+  let isTracking = false;
+
   anchor.onTargetFound = () => {
+    isTracking = true;
+    // مقداردهی اولیه با موقعیت فعلی تا jump نداشته باشیم
+    smoothPosition.copy(anchor.group.position);
+    smoothQuaternion.copy(anchor.group.quaternion);
     video.play();
-  }
+  };
+
   anchor.onTargetLost = () => {
+    isTracking = false;
     video.pause();
-  }
+  };
+
   video.addEventListener('play', () => {
     video.currentTime = 0;
   });
 
   await mindarThree.start();
+
   renderer.setAnimationLoop(() => {
+    if (isTracking) {
+      // lerp برای نرم کردن موقعیت و چرخش
+      smoothPosition.lerp(anchor.group.position, 0.2);
+      smoothQuaternion.slerp(anchor.group.quaternion, 0.2);
+
+      anchor.group.position.copy(smoothPosition);
+      anchor.group.quaternion.copy(smoothQuaternion);
+    }
+
     renderer.render(scene, camera);
   });
 
