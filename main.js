@@ -46,8 +46,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     uiError: "yes",
     uiScanning: "no",
     videoSettings: {
-      width: { ideal: 640 },
-      height: { ideal: 480 }
+      width: { ideal: 640, max: 640 },
+      height: { ideal: 480, max: 480 }
     }
   });
 
