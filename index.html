@@ -1,48 +1,224 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR · Notopia</title>
 
-    <!-- import map برای تعریف مسیرهای ماژول -->
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-        "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
-      }
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="./zappar-threejs.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; font-family: 'Courier New', monospace; }
+    canvas { display: block; width: 100vw !important; height: 100vh !important; }
+
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+    #topbar {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 20px; display: flex; align-items: center; gap: 10px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.65), transparent);
     }
-    </script>
+    #dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #ff4040; box-shadow: 0 0 8px #ff4040;
+      transition: background .4s, box-shadow .4s;
+    }
+    #dot.on { background: #00ffaa; box-shadow: 0 0 10px #00ffaa; }
+    #msg { color: #fff; font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; opacity: .8; }
 
-    <!-- main.js به شکل module -->
-    <script type="module" src="./main.js"></script>
+    #frame {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(72vw, 300px); height: min(72vw, 300px);
+      transition: opacity .5s;
+    }
+    #frame.hide { opacity: 0; }
+    .c { position: absolute; width: 26px; height: 26px; border: 2.5px solid #00ffaa; }
+    .c.tl { top:0; left:0; border-right:none; border-bottom:none; }
+    .c.tr { top:0; right:0; border-left:none; border-bottom:none; }
+    .c.bl { bottom:0; left:0; border-right:none; border-top:none; }
+    .c.br { bottom:0; right:0; border-left:none; border-top:none; }
 
-    <style>
-      html, body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-      }
+    #scanline {
+      position: absolute; left: 50%; top: 50%; transform: translateX(-50%);
+      width: min(72vw, 300px); height: 1.5px;
+      background: linear-gradient(to right, transparent, #00ffaa80, #00ffaa, #00ffaa80, transparent);
+      animation: scan 2s ease-in-out infinite;
+      transition: opacity .5s;
+    }
+    #scanline.hide { opacity: 0; }
+    @keyframes scan {
+      0%   { top: calc(50% - min(36vw, 150px)); }
+      50%  { top: calc(50% + min(36vw, 150px)); }
+      100% { top: calc(50% - min(36vw, 150px)); }
+    }
 
-      body {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
+    #hint {
+      position: absolute; bottom: 55px; left: 0; right: 0;
+      text-align: center; color: rgba(255,255,255,.5);
+      font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+      transition: opacity .4s;
+    }
+    #hint.hide { opacity: 0; }
 
-      #ar-container {
-        width: 90vw;
-        height: 90vh;
-        position: relative;
-        overflow: hidden;
-        border: 1px solid #ccc; /* فقط برای دید بهتر */
-      }
-    </style>
-  </head>
+    #badge {
+      position: absolute; bottom: 55px; left: 50%;
+      transform: translateX(-50%);
+      border: 1px solid #00ffaa; color: #00ffaa;
+      font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+      padding: 7px 18px; opacity: 0; transition: opacity .4s; white-space: nowrap;
+    }
+    #badge.show { opacity: 1; }
+  </style>
+</head>
+<body>
 
-  <body>
-    <h1>my webar webpage</h1>
+<div id="hud">
+  <div id="topbar">
+    <div id="dot"></div>
+    <span id="msg">در حال اسکن...</span>
+  </div>
+  <div id="frame">
+    <div class="c tl"></div><div class="c tr"></div>
+    <div class="c bl"></div><div class="c br"></div>
+  </div>
+  <div id="scanline"></div>
+  <div id="hint">تصویر هدف را در کادر قرار دهید</div>
+  <div id="badge">▶ پخش ویدیو</div>
+</div>
 
-    <div id="ar-container"></div>
-  </body>
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const TARGET_FILE  = './assets/targets/pedar.zpt';
+const VIDEO_SRC    = './assets/videos/notopia.mp4';
+const VIDEO_ASPECT = 1;
+// ────────────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+function setTracking(on) {
+  $('dot').className      = on ? 'on' : '';
+  $('msg').textContent    = on ? 'تصویر شناسایی شد' : 'در حال اسکن...';
+  $('frame').className    = on ? 'hide' : '';
+  $('scanline').className = on ? 'hide' : '';
+  $('hint').className     = on ? 'hide' : '';
+  $('badge').className    = on ? 'show' : '';
+}
+
+// ── Renderer ─────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight));
+
+ZapparThree.glContextSet(renderer.getContext());
+
+// ── Scene & Camera ────────────────────────────────────────
+const scene  = new THREE.Scene();
+const camera = new ZapparThree.Camera();
+scene.background = camera.backgroundTexture;
+
+// ── Permissions ───────────────────────────────────────────
+ZapparThree.permissionRequestUI().then(granted => {
+  if (granted) camera.start();
+  else ZapparThree.permissionDeniedUI();
+});
+
+// ── Video ─────────────────────────────────────────────────
+const videoEl = Object.assign(document.createElement('video'), {
+  src: VIDEO_SRC,
+  loop: false,
+  muted: false,
+  playsInline: true,
+  crossOrigin: 'anonymous',
+});
+videoEl.load();
+
+const videoTex = new THREE.VideoTexture(videoEl);
+videoTex.minFilter = THREE.LinearFilter;
+videoTex.magFilter = THREE.LinearFilter;
+
+// ── Image Tracker with maximum sensitivity ──────────────────
+const imageTracker = new ZapparThree.ImageTrackerLoader().load(TARGET_FILE);
+
+// Even more sensitive tracking settings
+imageTracker.maxTrackableDistance = 1;  // Increased to allow farther tracking
+imageTracker.trackingMode = ZapparThree.TRACKING_MODE_OPTIMIZED_FOR_AR;
+imageTracker.trackingSmoothing = 0.8;     // Reduced smoothing for better responsiveness
+imageTracker.minScore = 0.2;              // Lowered minimum score for detection
+imageTracker.contrastEnhancement = true;   // فعال‌سازی بهبود کنتراست در زمان واقعی
+
+const trackerGroup = new ZapparThree.ImageAnchorGroup(camera, imageTracker);
+scene.add(trackerGroup);
+
+// ── Video plane on marker ─────────────────────────────────
+const MARKER_W = 1;
+const MARKER_H = MARKER_W / VIDEO_ASPECT;
+
+const plane = new THREE.Mesh(
+  new THREE.PlaneGeometry(MARKER_W, MARKER_H),
+  new THREE.MeshBasicMaterial({ 
+    map: videoTex, 
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0
+  })
+);
+plane.scale.set(2.04, 2.04, 2.04);
+trackerGroup.add(plane);
+
+let videoPlaying = false;
+
+// ── Tracking events ───────────────────────────────────────
+imageTracker.onVisible.bind(() => {
+  setTracking(true);
+  
+  // Show the video plane
+  plane.material.opacity = 1;
+  
+  // Restart video from beginning
+  videoEl.currentTime = 0;
+  videoEl.play().then(() => {
+    videoPlaying = true;
+  }).catch(e => {
+    console.log("Auto-play prevented:", e);
+    $('msg').textContent = 'برای پخش لمس کنید';
+    document.addEventListener('click', () => {
+      videoEl.play().then(() => {
+        videoPlaying = true;
+      });
+    }, { once: true });
+  });
+});
+
+imageTracker.onNotVisible.bind(() => {
+  setTracking(false);
+  
+  // Hide the video plane
+  plane.material.opacity = 0;
+  
+  // Pause video
+  videoEl.pause();
+  videoPlaying = false;
+});
+
+// ── Render loop ───────────────────────────────────────────
+renderer.setAnimationLoop(() => {
+  camera.updateFrame(renderer);
+  if (videoEl.readyState >= 2 && videoPlaying) {
+    videoTex.needsUpdate = true;
+    
+    // Handle video ending
+    if (videoEl.ended) {
+      videoEl.currentTime = 0;
+      videoEl.play().catch(e => console.log("Restart failed:", e));
+    }
+  }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
 </html>
