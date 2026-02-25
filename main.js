@@ -12,101 +12,77 @@ async function loadVideo(path) {
   });
 }
 
-// دوربین اصلی رو پیدا میکنه با تست واقعی هر دوربین
-async function findMainBackCamera() {
-  // اول permission میگیریم
+async function getBackCameras() {
+  // اول permission میگیریم تا label ها نمایش داده بشن
   const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
   tempStream.getTracks().forEach(t => t.stop());
 
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const backCameras = devices.filter(d => {
+  return devices.filter(d => {
     if (d.kind !== 'videoinput') return false;
     const label = d.label.toLowerCase();
-    // دوربین جلو رو حذف میکنیم
-    if (label.includes('front') || label.includes('facing front') || label.includes('user')) return false;
-    return true;
+    return !label.includes('front') && !label.includes('facing front') && !label.includes('user');
   });
+}
 
-  console.log('Back cameras found:', backCameras.map(d => d.label));
+function showCameraSelector(cameras) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; z-index: 9999; gap: 12px; padding: 24px;
+    `;
 
-  if (backCameras.length === 0) return null;
-  if (backCameras.length === 1) return backCameras[0].deviceId;
+    const title = document.createElement('p');
+    title.textContent = 'دوربین اصلی را انتخاب کنید:';
+    title.style.cssText = 'color: white; font-size: 18px; margin-bottom: 8px; font-family: sans-serif;';
+    overlay.appendChild(title);
 
-  // از هر دوربین یه فریم میگیریم و FOV رو مقایسه میکنیم
-  // دوربین اصلی معمولاً focal length بیشتری داره نسبت به ultra-wide
-  // یعنی zoom بیشتر = اشیاء بزرگتر در فریم
-  const cameraScores = [];
-
-  for (const cam of backCameras) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: cam.deviceId }, width: 640, height: 480 }
+    cameras.forEach((cam, i) => {
+      const btn = document.createElement('button');
+      // label رو خوانا میکنیم
+      const rawLabel = cam.label || `Camera ${i + 1}`;
+      btn.textContent = rawLabel;
+      btn.style.cssText = `
+        width: 100%; max-width: 360px; padding: 14px 20px;
+        background: #1e88e5; color: white; border: none; border-radius: 10px;
+        font-size: 15px; font-family: sans-serif; cursor: pointer;
+      `;
+      btn.addEventListener('click', () => {
+        document.body.removeChild(overlay);
+        resolve(cam.deviceId);
       });
+      overlay.appendChild(btn);
+    });
 
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-
-      // امتیازدهی بر اساس اطلاعات موجود
-      let score = 0;
-
-      // فاصله کانونی مستقیم (اگر مرورگر پشتیبانی کنه)
-      if (settings.focusDistance !== undefined) {
-        score += settings.focusDistance * 10;
-      }
-
-      // zoom level پیش‌فرض - دوربین اصلی zoom=1 داره
-      if (settings.zoom !== undefined) {
-        // دوربین اصلی zoom نزدیک به 1 داره
-        score += (1 / Math.abs(settings.zoom - 1 + 0.001)) * 0.1;
-      }
-
-      // بررسی label برای سرنخ‌های متنی
-      const label = cam.label.toLowerCase();
-      if (label.includes('main')) score += 100;
-      if (label.includes('wide') && !label.includes('ultra') && !label.includes('0.6') && !label.includes('0.5')) score += 50;
-      if (label.includes('ultra') || label.includes('0.6') || label.includes('0.5') || label.includes('0.7')) score -= 100;
-      if (label.includes('telephoto') || label.includes('tele')) score -= 50;
-      if (label.includes('camera2 0') || label.includes('back camera 0') || label.includes('back, 0')) score += 80;
-      if (label.includes('camera2 1') || label.includes('back camera 1') || label.includes('back, 1')) score += 30;
-
-      // اندازه تصویر - دوربین اصلی معمولاً بهترین رزولوشن داره
-      if (capabilities.width?.max) {
-        score += capabilities.width.max / 10000;
-      }
-
-      console.log(`Camera: ${cam.label} | Score: ${score} | Settings:`, settings);
-
-      stream.getTracks().forEach(t => t.stop());
-
-      cameraScores.push({ deviceId: cam.deviceId, label: cam.label, score });
-    } catch (err) {
-      console.warn(`Could not test camera ${cam.label}:`, err);
-    }
-  }
-
-  if (cameraScores.length === 0) return null;
-
-  // دوربین با بیشترین امتیاز رو انتخاب میکنیم
-  cameraScores.sort((a, b) => b.score - a.score);
-  console.log('Selected camera:', cameraScores[0].label);
-
-  return cameraScores[0].deviceId;
+    document.body.appendChild(overlay);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
 
-  let mainCameraId = null;
+  let selectedDeviceId = null;
 
   try {
-    mainCameraId = await findMainBackCamera();
-    console.log('Main camera deviceId:', mainCameraId);
+    const backCameras = await getBackCameras();
+    console.log('Cameras:', backCameras.map(c => c.label));
+
+    if (backCameras.length === 0) {
+      alert("No back camera found.");
+      return;
+    } else if (backCameras.length === 1) {
+      selectedDeviceId = backCameras[0].deviceId;
+    } else {
+      // بیش از یه دوربین عقب داریم → کاربر انتخاب کنه
+      selectedDeviceId = await showCameraSelector(backCameras);
+    }
   } catch (err) {
-    console.warn('Could not find main camera, falling back to environment:', err);
+    console.warn('Camera selection failed, using environment fallback:', err);
   }
 
-  const videoSettings = mainCameraId
-    ? { deviceId: { exact: mainCameraId } }
+  const videoSettings = selectedDeviceId
+    ? { deviceId: { exact: selectedDeviceId } }
     : { facingMode: { ideal: 'environment' } };
 
   const mindarThree = new MindARThree({
