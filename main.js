@@ -12,27 +12,102 @@ async function loadVideo(path) {
   });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+// دوربین اصلی رو پیدا میکنه با تست واقعی هر دوربین
+async function findMainBackCamera() {
+  // اول permission میگیریم
+  const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  tempStream.getTracks().forEach(t => t.stop());
 
-  async function requestCameraAccess() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const backCameras = devices.filter(d => {
+    if (d.kind !== 'videoinput') return false;
+    const label = d.label.toLowerCase();
+    // دوربین جلو رو حذف میکنیم
+    if (label.includes('front') || label.includes('facing front') || label.includes('user')) return false;
+    return true;
+  });
+
+  console.log('Back cameras found:', backCameras.map(d => d.label));
+
+  if (backCameras.length === 0) return null;
+  if (backCameras.length === 1) return backCameras[0].deviceId;
+
+  // از هر دوربین یه فریم میگیریم و FOV رو مقایسه میکنیم
+  // دوربین اصلی معمولاً focal length بیشتری داره نسبت به ultra-wide
+  // یعنی zoom بیشتر = اشیاء بزرگتر در فریم
+  const cameraScores = [];
+
+  for (const cam of backCameras) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 320 },
-          height: { ideal: 240 }
-        }
+        video: { deviceId: { exact: cam.deviceId }, width: 640, height: 480 }
       });
-      stream.getTracks().forEach(track => track.stop());
-      return true;
+
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+      // امتیازدهی بر اساس اطلاعات موجود
+      let score = 0;
+
+      // فاصله کانونی مستقیم (اگر مرورگر پشتیبانی کنه)
+      if (settings.focusDistance !== undefined) {
+        score += settings.focusDistance * 10;
+      }
+
+      // zoom level پیش‌فرض - دوربین اصلی zoom=1 داره
+      if (settings.zoom !== undefined) {
+        // دوربین اصلی zoom نزدیک به 1 داره
+        score += (1 / Math.abs(settings.zoom - 1 + 0.001)) * 0.1;
+      }
+
+      // بررسی label برای سرنخ‌های متنی
+      const label = cam.label.toLowerCase();
+      if (label.includes('main')) score += 100;
+      if (label.includes('wide') && !label.includes('ultra') && !label.includes('0.6') && !label.includes('0.5')) score += 50;
+      if (label.includes('ultra') || label.includes('0.6') || label.includes('0.5') || label.includes('0.7')) score -= 100;
+      if (label.includes('telephoto') || label.includes('tele')) score -= 50;
+      if (label.includes('camera2 0') || label.includes('back camera 0') || label.includes('back, 0')) score += 80;
+      if (label.includes('camera2 1') || label.includes('back camera 1') || label.includes('back, 1')) score += 30;
+
+      // اندازه تصویر - دوربین اصلی معمولاً بهترین رزولوشن داره
+      if (capabilities.width?.max) {
+        score += capabilities.width.max / 10000;
+      }
+
+      console.log(`Camera: ${cam.label} | Score: ${score} | Settings:`, settings);
+
+      stream.getTracks().forEach(t => t.stop());
+
+      cameraScores.push({ deviceId: cam.deviceId, label: cam.label, score });
     } catch (err) {
-      alert("Camera access denied. AR cannot start.");
-      console.error("Camera access error:", err);
-      return false;
+      console.warn(`Could not test camera ${cam.label}:`, err);
     }
   }
 
-  const hasAccess = await requestCameraAccess();
-  if (!hasAccess) return;
+  if (cameraScores.length === 0) return null;
+
+  // دوربین با بیشترین امتیاز رو انتخاب میکنیم
+  cameraScores.sort((a, b) => b.score - a.score);
+  console.log('Selected camera:', cameraScores[0].label);
+
+  return cameraScores[0].deviceId;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+
+  let mainCameraId = null;
+
+  try {
+    mainCameraId = await findMainBackCamera();
+    console.log('Main camera deviceId:', mainCameraId);
+  } catch (err) {
+    console.warn('Could not find main camera, falling back to environment:', err);
+  }
+
+  const videoSettings = mainCameraId
+    ? { deviceId: { exact: mainCameraId } }
+    : { facingMode: { ideal: 'environment' } };
 
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
@@ -45,10 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no",
-    videoSettings: {
-      width: { ideal: 320, max: 320 },
-      height: { ideal: 240, max: 240 }
-    }
+    videoSettings
   });
 
   const { renderer, scene, camera } = mindarThree;
@@ -89,11 +161,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isTracking) {
       smoothPosition.lerp(anchor.group.position, 0.1);
       smoothQuaternion.slerp(anchor.group.quaternion, 0.1);
-
       anchor.group.position.copy(smoothPosition);
       anchor.group.quaternion.copy(smoothQuaternion);
     }
-
     renderer.render(scene, camera);
   });
 
