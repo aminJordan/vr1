@@ -12,78 +12,27 @@ async function loadVideo(path) {
   });
 }
 
-async function getBackCameras() {
-  // اول permission میگیریم تا label ها نمایش داده بشن
-  const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-  tempStream.getTracks().forEach(t => t.stop());
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  return devices.filter(d => {
-    if (d.kind !== 'videoinput') return false;
-    const label = d.label.toLowerCase();
-    return !label.includes('front') && !label.includes('facing front') && !label.includes('user');
-  });
-}
-
-function showCameraSelector(cameras) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = `
-      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; z-index: 9999; gap: 12px; padding: 24px;
-    `;
-
-    const title = document.createElement('p');
-    title.textContent = 'دوربین اصلی را انتخاب کنید:';
-    title.style.cssText = 'color: white; font-size: 18px; margin-bottom: 8px; font-family: sans-serif;';
-    overlay.appendChild(title);
-
-    cameras.forEach((cam, i) => {
-      const btn = document.createElement('button');
-      // label رو خوانا میکنیم
-      const rawLabel = cam.label || `Camera ${i + 1}`;
-      btn.textContent = rawLabel;
-      btn.style.cssText = `
-        width: 100%; max-width: 360px; padding: 14px 20px;
-        background: #1e88e5; color: white; border: none; border-radius: 10px;
-        font-size: 15px; font-family: sans-serif; cursor: pointer;
-      `;
-      btn.addEventListener('click', () => {
-        document.body.removeChild(overlay);
-        resolve(cam.deviceId);
-      });
-      overlay.appendChild(btn);
-    });
-
-    document.body.appendChild(overlay);
-  });
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
 
-  let selectedDeviceId = null;
-
-  try {
-    const backCameras = await getBackCameras();
-    console.log('Cameras:', backCameras.map(c => c.label));
-
-    if (backCameras.length === 0) {
-      alert("No back camera found.");
-      return;
-    } else if (backCameras.length === 1) {
-      selectedDeviceId = backCameras[0].deviceId;
-    } else {
-      // بیش از یه دوربین عقب داریم → کاربر انتخاب کنه
-      selectedDeviceId = await showCameraSelector(backCameras);
+  async function requestCameraAccess() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 }
+        }
+      });
+      stream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (err) {
+      alert("Camera access denied. AR cannot start.");
+      console.error("Camera access error:", err);
+      return false;
     }
-  } catch (err) {
-    console.warn('Camera selection failed, using environment fallback:', err);
   }
 
-  const videoSettings = selectedDeviceId
-    ? { deviceId: { exact: selectedDeviceId } }
-    : { facingMode: { ideal: 'environment' } };
+  const hasAccess = await requestCameraAccess();
+  if (!hasAccess) return;
 
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
@@ -96,7 +45,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no",
-    videoSettings
+    videoSettings: {
+      width: { ideal: 320, max: 320 },
+      height: { ideal: 240, max: 240 }
+    }
   });
 
   const { renderer, scene, camera } = mindarThree;
@@ -137,9 +89,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isTracking) {
       smoothPosition.lerp(anchor.group.position, 0.1);
       smoothQuaternion.slerp(anchor.group.quaternion, 0.1);
+
       anchor.group.position.copy(smoothPosition);
       anchor.group.quaternion.copy(smoothQuaternion);
     }
+
     renderer.render(scene, camera);
   });
 
