@@ -17,10 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function requestCameraAccess() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 320 },
-          height: { ideal: 240 }
-        }
+        video: true
       });
       stream.getTracks().forEach(track => track.stop());
       return true;
@@ -45,10 +42,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     uiLoading: "yes",
     uiError: "yes",
     uiScanning: "no",
-    videoSettings: {
-      width: { ideal: 320, max: 320 },
-      height: { ideal: 240, max: 240 }
-    }
   });
 
   const { renderer, scene, camera } = mindarThree;
