@@ -1,37 +1,50 @@
-  import * as THREE from 'three';
-  import { MindARThree } from 'mindar-image-three';
+import * as THREE from 'three';
+import { MindARThree } from 'mindar-image-three';
 
-  async function loadVideo(path) {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement("video");
-      video.src = path;
-      video.setAttribute('crossorigin', 'anonymous');
-      video.setAttribute('playsinline', '');
-      video.addEventListener('loadedmetadata', () => resolve(video));
-      video.addEventListener('error', (err) => reject(err));
-    });
+async function loadVideo(path) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.src = path;
+    video.setAttribute('crossorigin', 'anonymous');
+    video.setAttribute('playsinline', '');
+    video.addEventListener('loadedmetadata', () => resolve(video));
+    video.addEventListener('error', (err) => reject(err));
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+
+  let currentDeviceId = null;
+  let devices = [];
+
+  async function requestCameraAccess(deviceId = null) {
+    try {
+      const constraints = {
+        video: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          width: { ideal: 320 },
+          height: { ideal: 240 }
+        }
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (err) {
+      alert("Camera access denied. AR cannot start.");
+      console.error("Camera access error:", err);
+      return false;
+    }
   }
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  async function getVideoDevices() {
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    devices = allDevices.filter(d => d.kind === "videoinput");
+  }
 
-    async function requestCameraAccess() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 320 },
-            height: { ideal: 240 }
-          }
-        });
-        stream.getTracks().forEach(track => track.stop());
-        return true;
-      } catch (err) {
-        alert("Camera access denied. AR cannot start.");
-        console.error("Camera access error:", err);
-        return false;
-      }
-    }
+  await getVideoDevices();
 
-    const hasAccess = await requestCameraAccess();
+  async function startAR(deviceId = null) {
+    const hasAccess = await requestCameraAccess(deviceId);
     if (!hasAccess) return;
 
     const mindarThree = new MindARThree({
@@ -46,6 +59,7 @@
       uiError: "yes",
       uiScanning: "no",
       videoSettings: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
         width: { ideal: 320, max: 320 },
         height: { ideal: 240, max: 240 }
       }
@@ -97,4 +111,30 @@
       renderer.render(scene, camera);
     });
 
+    return mindarThree;
+  }
+
+  let mindarInstance = await startAR();
+
+  document.querySelector("#switch-camera").addEventListener("click", async () => {
+    if (devices.length < 2) {
+      alert("No other camera found.");
+      return;
+    }
+
+    // پیدا کردن دستگاه بعدی
+    const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
+    const nextIndex = (currentIndex + 1) % devices.length;
+    currentDeviceId = devices[nextIndex].deviceId;
+
+    // متوقف کردن AR قبلی
+    if (mindarInstance) {
+      await mindarInstance.stop();
+      mindarInstance.renderer.dispose();
+    }
+
+    // شروع مجدد AR با دوربین جدید
+    mindarInstance = await startAR(currentDeviceId);
   });
+
+});
