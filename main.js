@@ -46,8 +46,8 @@
       uiError: "yes",
       uiScanning: "no",
       videoSettings: {
-        width: { ideal: 320, max: 320 },
-        height: { ideal: 240, max: 240 }
+        width: { ideal: 1920, max: 1920 },   // قبلاً 320
+        height: { ideal: 1080, max: 1080 }   // قبلاً 240
       }
     });
 
