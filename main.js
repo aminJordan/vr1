@@ -1,47 +1,39 @@
-import * as THREE from 'three';
-import { MindARThree } from 'mindar-image-three';
+  import * as THREE from 'three';
+  import { MindARThree } from 'mindar-image-three';
 
-async function loadVideo(path) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement("video");
-    video.src = path;
-    video.setAttribute('crossorigin', 'anonymous');
-    video.setAttribute('playsinline', '');
-    video.loop = true;
-    video.addEventListener('loadedmetadata', () => resolve(video));
-    video.addEventListener('error', (err) => reject(err));
-  });
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-  let backCameras = [];
-  let selectedCameraId = null;
-
-  // پیدا کردن دوربین‌های عقب
-  async function getBackCameras() {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    backCameras = devices.filter(d => d.kind === "videoinput" && /back|rear|environment/i.test(d.label));
-    if (backCameras.length === 0) backCameras = devices.filter(d => d.kind === "videoinput");
+  async function loadVideo(path) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement("video");
+      video.src = path;
+      video.setAttribute('crossorigin', 'anonymous');
+      video.setAttribute('playsinline', '');
+      video.addEventListener('loadedmetadata', () => resolve(video));
+      video.addEventListener('error', (err) => reject(err));
+    });
   }
 
-  await getBackCameras();
-  const cameraSelect = document.querySelector("#camera-select");
+  document.addEventListener('DOMContentLoaded', async () => {
 
-  // نمایش دوربین‌ها در select
-  backCameras.forEach((cam, idx) => {
-    const opt = document.createElement("option");
-    opt.value = cam.deviceId;
-    opt.text = cam.label || `Camera ${idx+1}`;
-    cameraSelect.appendChild(opt);
-  });
+    async function requestCameraAccess() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 320 },
+            height: { ideal: 240 }
+          }
+        });
+        stream.getTracks().forEach(track => track.stop());
+        return true;
+      } catch (err) {
+        alert("Camera access denied. AR cannot start.");
+        console.error("Camera access error:", err);
+        return false;
+      }
+    }
 
-  selectedCameraId = backCameras[0].deviceId;
+    const hasAccess = await requestCameraAccess();
+    if (!hasAccess) return;
 
-  cameraSelect.addEventListener("change", (e) => {
-    selectedCameraId = e.target.value;
-  });
-
-  document.querySelector("#start-ar").addEventListener("click", async () => {
     const mindarThree = new MindARThree({
       container: document.querySelector("#ar-container"),
       imageTargetSrc: './assets/targets/pedar.mind',
@@ -54,15 +46,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       uiError: "yes",
       uiScanning: "no",
       videoSettings: {
-        deviceId: { exact: selectedCameraId },
         width: { ideal: 320, max: 320 },
         height: { ideal: 240, max: 240 }
       }
     });
 
     const { renderer, scene, camera } = mindarThree;
-    const videoElement = await loadVideo("./assets/videos/notopia.mp4");
-    const texture = new THREE.VideoTexture(videoElement);
+
+    const video = await loadVideo("./assets/videos/notopia.mp4");
+    const texture = new THREE.VideoTexture(video);
 
     const geometry = new THREE.PlaneGeometry(1, 1);
     const material = new THREE.MeshBasicMaterial({ map: texture });
@@ -79,12 +71,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       isTracking = true;
       smoothPosition.copy(anchor.group.position);
       smoothQuaternion.copy(anchor.group.quaternion);
-      videoElement.play();
+      video.play();
     };
+
     anchor.onTargetLost = () => {
       isTracking = false;
-      videoElement.pause();
+      video.pause();
     };
+
+    video.addEventListener('play', () => {
+      video.currentTime = 0;
+    });
 
     await mindarThree.start();
 
@@ -92,10 +89,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isTracking) {
         smoothPosition.lerp(anchor.group.position, 0.1);
         smoothQuaternion.slerp(anchor.group.quaternion, 0.1);
+
         anchor.group.position.copy(smoothPosition);
         anchor.group.quaternion.copy(smoothQuaternion);
       }
+
       renderer.render(scene, camera);
     });
+
   });
-});
