@@ -13,41 +13,31 @@ async function loadVideo(path) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  let currentDeviceIndex = 0;
+  let backCameras = [];
+  let mindarThree;
+  let videoStream;
 
-  let currentDeviceId = null;
-  let devices = [];
+  async function getBackCameras() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    backCameras = devices.filter(d => d.kind === "videoinput" && /back|rear|environment/i.test(d.label));
+    if (backCameras.length === 0) backCameras = devices.filter(d => d.kind === "videoinput"); // fallback
+  }
 
-  async function requestCameraAccess(deviceId = null) {
-    try {
-      const constraints = {
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: { ideal: 320 },
-          height: { ideal: 240 }
-        }
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      stream.getTracks().forEach(track => track.stop());
-      return true;
-    } catch (err) {
-      alert("Camera access denied. AR cannot start.");
-      console.error("Camera access error:", err);
-      return false;
+  async function startCamera(deviceId) {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
     }
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId }, width: 320, height: 240 }
+    });
+    return videoStream;
   }
-
-  async function getVideoDevices() {
-    const allDevices = await navigator.mediaDevices.enumerateDevices();
-    devices = allDevices.filter(d => d.kind === "videoinput");
-  }
-
-  await getVideoDevices();
 
   async function startAR(deviceId = null) {
-    const hasAccess = await requestCameraAccess(deviceId);
-    if (!hasAccess) return;
+    const stream = deviceId ? await startCamera(deviceId) : null;
 
-    const mindarThree = new MindARThree({
+    mindarThree = new MindARThree({
       container: document.querySelector("#ar-container"),
       imageTargetSrc: './assets/targets/pedar.mind',
       filterMinCF: 0.002,
@@ -87,15 +77,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       smoothQuaternion.copy(anchor.group.quaternion);
       video.play();
     };
-
     anchor.onTargetLost = () => {
       isTracking = false;
       video.pause();
     };
-
-    video.addEventListener('play', () => {
-      video.currentTime = 0;
-    });
+    video.addEventListener('play', () => video.currentTime = 0);
 
     await mindarThree.start();
 
@@ -103,38 +89,33 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isTracking) {
         smoothPosition.lerp(anchor.group.position, 0.1);
         smoothQuaternion.slerp(anchor.group.quaternion, 0.1);
-
         anchor.group.position.copy(smoothPosition);
         anchor.group.quaternion.copy(smoothQuaternion);
       }
-
       renderer.render(scene, camera);
     });
 
     return mindarThree;
   }
 
-  let mindarInstance = await startAR();
+  await getBackCameras();
+  if (backCameras.length === 0) {
+    alert("No cameras found!");
+    return;
+  }
+
+  await startAR(backCameras[currentDeviceIndex].deviceId);
 
   document.querySelector("#switch-camera").addEventListener("click", async () => {
-    if (devices.length < 2) {
-      alert("No other camera found.");
-      return;
+    currentDeviceIndex = (currentDeviceIndex + 1) % backCameras.length;
+
+    // stop AR renderer
+    if (mindarThree) {
+      await mindarThree.stop();
+      mindarThree.renderer.dispose();
     }
 
-    // پیدا کردن دستگاه بعدی
-    const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
-    const nextIndex = (currentIndex + 1) % devices.length;
-    currentDeviceId = devices[nextIndex].deviceId;
-
-    // متوقف کردن AR قبلی
-    if (mindarInstance) {
-      await mindarInstance.stop();
-      mindarInstance.renderer.dispose();
-    }
-
-    // شروع مجدد AR با دوربین جدید
-    mindarInstance = await startAR(currentDeviceId);
+    await startAR(backCameras[currentDeviceIndex].deviceId);
   });
 
 });
