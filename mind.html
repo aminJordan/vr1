@@ -3,7 +3,6 @@
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- import map برای تعریف مسیرهای ماژول -->
     <script type="importmap">
     {
       "imports": {
@@ -14,35 +13,235 @@
     }
     </script>
 
-    <!-- main.js به شکل module -->
     <script type="module" src="./main.js"></script>
 
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        --bg: #0a0a0f;
+        --surface: #13131a;
+        --border: #2a2a3a;
+        --accent: #00e5ff;
+        --accent2: #7b2fff;
+        --text: #e8e8f0;
+        --text-dim: #6b6b80;
+      }
+
       html, body {
-        margin: 0;
         width: 100%;
         height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Space Mono', monospace;
       }
 
-      body {
+      /* ─── Camera Picker Overlay ─── */
+      #camera-picker {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        padding: 24px;
+      }
+
+      .picker-card {
+        width: 100%;
+        max-width: 440px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 36px 32px;
         display: flex;
         flex-direction: column;
-        align-items: center;
+        gap: 28px;
       }
 
+      .picker-title {
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+
+      .picker-heading {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.3;
+        color: var(--text);
+      }
+
+      .picker-desc {
+        font-size: 12px;
+        color: var(--text-dim);
+        line-height: 1.8;
+      }
+
+      .camera-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .camera-option {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        background: transparent;
+        color: var(--text);
+        font-family: inherit;
+        text-align: left;
+        width: 100%;
+      }
+
+      .camera-option:hover {
+        border-color: var(--accent);
+        background: rgba(0, 229, 255, 0.04);
+      }
+
+      .camera-option.selected {
+        border-color: var(--accent);
+        background: rgba(0, 229, 255, 0.08);
+      }
+
+      .cam-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: rgba(0, 229, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 18px;
+      }
+
+      .cam-info {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+
+      .cam-label {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .cam-id {
+        font-size: 10px;
+        color: var(--text-dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .cam-badge {
+        margin-left: auto;
+        flex-shrink: 0;
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 99px;
+        background: rgba(0,229,255,0.12);
+        color: var(--accent);
+        display: none;
+      }
+
+      .camera-option.selected .cam-badge {
+        display: block;
+      }
+
+      .picker-error {
+        font-size: 12px;
+        color: #ff6b6b;
+        background: rgba(255,107,107,0.08);
+        border: 1px solid rgba(255,107,107,0.2);
+        border-radius: 8px;
+        padding: 12px 14px;
+        display: none;
+      }
+
+      .picker-error.visible { display: block; }
+
+      #start-btn {
+        padding: 14px;
+        border-radius: 10px;
+        border: none;
+        background: var(--accent);
+        color: #000;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: opacity 0.2s, transform 0.15s;
+      }
+
+      #start-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+
+      #start-btn:not(:disabled):hover {
+        opacity: 0.85;
+        transform: translateY(-1px);
+      }
+
+      /* ─── AR Container ─── */
+      body > h1 { display: none; } /* عنوان رو مخفی می‌کنیم */
+
       #ar-container {
-        width: 90vw;
-        height: 90vh;
+        width: 100vw;
+        height: 100vh;
         position: relative;
         overflow: hidden;
-        border: 1px solid #ccc; /* فقط برای دید بهتر */
+        display: none; /* تا قبل از شروع AR مخفیه */
       }
     </style>
   </head>
 
   <body>
-    <h1>my webar webpage</h1>
+    <!-- Camera Picker -->
+    <div id="camera-picker">
+      <div class="picker-card">
+        <div>
+          <p class="picker-title">WebAR Setup</p>
+          <h2 class="picker-heading">انتخاب دوربین</h2>
+        </div>
 
+        <p class="picker-desc">
+          لیست دوربین‌های شناسایی‌شده در دستگاه شما. یکی را انتخاب کنید تا تجربه AR آغاز شود.
+        </p>
+
+        <div class="camera-list" id="camera-list">
+          <p style="font-size:12px; color: var(--text-dim);">در حال دریافت دسترسی دوربین…</p>
+        </div>
+
+        <div class="picker-error" id="picker-error"></div>
+
+        <button id="start-btn" disabled>شروع AR</button>
+      </div>
+    </div>
+
+    <!-- AR View -->
     <div id="ar-container"></div>
   </body>
 </html>
