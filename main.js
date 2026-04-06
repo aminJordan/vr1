@@ -17,28 +17,54 @@ async function loadVideo(path) {
   });
 }
 
+// 🔥 پیدا کردن دوربین اصلی پشت
+async function getBackCameraDeviceId() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+
+  const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+  // دیباگ (اختیاری)
+  console.log("Cameras:", videoDevices);
+
+  // تلاش برای پیدا کردن لنز اصلی (نه wide)
+  let backCamera = videoDevices.find(d =>
+    d.label.toLowerCase().includes('back') &&
+    !d.label.toLowerCase().includes('wide')
+  );
+
+  // اگر پیدا نشد، اولین دوربین پشت
+  if (!backCamera) {
+    backCamera = videoDevices.find(d =>
+      d.label.toLowerCase().includes('back')
+    );
+  }
+
+  // اگر باز هم نشد، آخری (معمولاً بهترین)
+  if (!backCamera) {
+    backCamera = videoDevices[videoDevices.length - 1];
+  }
+
+  return backCamera?.deviceId;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
 
   async function requestCameraAccess() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1920, max: 1920 },
-          height: { ideal: 1080, max: 1080 },
-          facingMode: "environment"
-        }
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       stream.getTracks().forEach(track => track.stop());
       return true;
     } catch (err) {
       alert("Camera access denied. AR cannot start.");
-      console.error("Camera access error:", err);
+      console.error(err);
       return false;
     }
   }
 
   const hasAccess = await requestCameraAccess();
   if (!hasAccess) return;
+
+  const deviceId = await getBackCameraDeviceId();
 
   const mindarThree = new MindARThree({
     container: document.querySelector("#ar-container"),
@@ -55,15 +81,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     uiScanning: "no",
 
     videoSettings: {
-      width: { ideal: 1920, max: 1920 },
-      height: { ideal: 1080, max: 1080 },
-      facingMode: "environment"
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: 1920 },
+      height: { ideal: 1080 }
     }
   });
 
   const { renderer, scene, camera } = mindarThree;
 
-  // 🔥 افزایش کیفیت رندر
+  // 🔥 کیفیت رندر
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.physicallyCorrectLights = true;
@@ -76,7 +102,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   texture.format = THREE.RGBAFormat;
   texture.generateMipmaps = false;
 
-  // 🔥 هندسه با کیفیت بالاتر
   const geometry = new THREE.PlaneGeometry(1, 1, 32, 32);
   const material = new THREE.MeshBasicMaterial({ map: texture });
   const plane = new THREE.Mesh(geometry, material);
