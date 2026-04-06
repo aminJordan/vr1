@@ -14,7 +14,7 @@ async function loadVideo(path) {
   });
 }
 
-// --- تابع جدید برای پیدا کردن Device ID دوربین اصلی عقب ---
+// --- تابع جدید برای پیدا کردن Device ID دوربین اصلی عقب با بررسی قابلیت‌ها ---
 async function getMainBackCameraId() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -25,21 +25,99 @@ async function getMainBackCameraId() {
 
     console.log("Back cameras found:", backCameras);
 
-    if (backCameras.length > 0) {
-      // فرض می‌کنیم اولین دوربین عقب، دوربین اصلی است.
-      // اینجا می‌توانید منطق پیشرفته‌تریایی "اصلی‌ترین" دوربین اضافه کنید.
-      // مثلاً بررسی label یا قابلیت‌هایی مثل resolution یا zoom.
-      // برای سادگی، اولین یکی را انتخاب می‌کنیم.
-      const mainBackCameraId = backCameras[0].deviceId;
-      console.log("Selected main back camera ID:", mainBackCameraId);
-      return mainBackCameraId;
-    } else {
-      console.warn("No back-facing camera found, returning null.");
-      return null; // یا مقدار دیگری مانند 'environment'
+    if (backCameras.length === 0) {
+      console.warn("No back-facing camera found.");
+      return null;
     }
+
+    if (backCameras.length === 1) {
+      console.log("Only one back camera available, selecting it:", backCameras[0].deviceId);
+      return backCameras[0].deviceId;
+    }
+
+    // آرایه‌ای برای ذخیره اطلاعات قابلیت‌های هر دوربین همراه با deviceId
+    const cameraCapabilities = [];
+
+    for (const camera of backCameras) {
+      try {
+        // دریافت یک جریان کوچک برای دسترسی به Track و قابلیت‌های آن
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: camera.deviceId,
+            width: { ideal: 320 }, // حداقل ممکن برای تست سریع
+            height: { ideal: 240 }
+          }
+        });
+
+        const videoTrack = stream.getVideoTracks()[0];
+        // const capabilities = videoTrack.getCapabilities(); // این قسمت در بعضی مرورگرها کار نمی‌کند یا اطلاعات محدودی می‌دهد
+        // console.log(`Capabilities for ${camera.label || camera.deviceId}:`, capabilities);
+
+        // بدست آوردن اطلاعات واقعی از Track
+        const settings = videoTrack.getSettings();
+        const constraints = videoTrack.getConstraints();
+
+        // اطلاعات اساسی را ذخیره می‌کنیم
+        cameraCapabilities.push({
+          deviceId: camera.deviceId,
+          label: camera.label || `Camera-${camera.deviceId.slice(0, 5)}`, // اگر label نباشد، از قسمتی از deviceId استفاده می‌کنیم
+          width: settings.width || 0,
+          height: settings.height || 0,
+          frameRate: settings.frameRate || 0,
+          maxWidth: constraints.width ? (constraints.width.max || 0) : 0,
+          maxHeight: constraints.height ? (constraints.height.max || 0) : 0,
+          maxFrameRate: constraints.frameRate ? (constraints.frameRate.max || 0) : 0,
+        });
+
+        // جریان را متوقف می‌کنیم
+        videoTrack.stop();
+      } catch (trackErr) {
+        console.warn(`Could not get capabilities for camera ${camera.deviceId} (${camera.label}):`, trackErr);
+        // اگر نتوانستیم قابلیت‌ها را بگیریم، باز هم اطلاعات پایه را اضافه می‌کنیم
+        cameraCapabilities.push({
+          deviceId: camera.deviceId,
+          label: camera.label || `Camera-${camera.deviceId.slice(0, 5)}`,
+          width: 0,
+          height: 0,
+          frameRate: 0,
+          maxWidth: 0,
+          maxHeight: 0,
+          maxFrameRate: 0,
+        });
+      }
+    }
+
+    console.log("Back camera capabilities analyzed:", cameraCapabilities);
+
+    // مرتب‌سازی بر اساس معیارهایی که ممکن است دوربین اصلی را نشان دهد
+    // 1. اولویت اصلی: حداکثر ارتفاع (Max Height) - معمولاً بالاترین رزولوشن
+    // 2. اگر مساوی بود، حداکثر عرض (Max Width)
+    // 3. اگر مساوی بود، ارتفاع تنظیمات فعلی (Height)
+    // 4. اگر مساوی بود، عرض تنظیمات فعلی (Width)
+    // 5. اگر مساوی بود، حداکثر نرخ فریم (Max FrameRate)
+    // 6. اگر مساوی بود، نرخ فریم تنظیمات فعلی (FrameRate)
+    cameraCapabilities.sort((a, b) => {
+      // مرتب‌سازی نزولی (Descending)
+      if (b.maxHeight !== a.maxHeight) return b.maxHeight - a.maxHeight;
+      if (b.maxWidth !== a.maxWidth) return b.maxWidth - a.maxWidth;
+      if (b.height !== a.height) return b.height - a.height;
+      if (b.width !== a.width) return b.width - a.width;
+      if (b.maxFrameRate !== a.maxFrameRate) return b.maxFrameRate - a.maxFrameRate;
+      if (b.frameRate !== a.frameRate) return b.frameRate - a.frameRate;
+      // اگر همه چیز مساوی بود، ترتیب ثابت می‌ماند
+      return 0;
+    });
+
+    console.log("Sorted camera capabilities (most likely main first):", cameraCapabilities);
+
+    // اولین دوربین در لیست مرتب‌شده، احتمالاً دوربین اصلی است
+    const mainCameraInfo = cameraCapabilities[0];
+    console.log(`Selected main back camera based on capabilities: ${mainCameraInfo.label} (ID: ${mainCameraInfo.deviceId})`);
+    return mainCameraInfo.deviceId;
+
   } catch (err) {
-    console.error("Error enumerating devices:", err);
-    return null; // یا مقدار دیگری مانند 'environment'
+    console.error("Error analyzing back camera capabilities:", err);
+    return null; // در صورت خطا، null برگردانده می‌شود و سپس از 'environment' استفاده می‌کنیم
   }
 }
 // --- پایان تابع جدید ---
@@ -57,18 +135,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         if (cameraIdOrMode) {
-             // اگر cameraId وجود داشت (یعنی null نبود)، از Device ID استفاده کن
              if (typeof cameraIdOrMode === 'string' && cameraIdOrMode !== 'environment') {
                  constraints.video.deviceId = { exact: cameraIdOrMode };
              } else if (cameraIdOrMode === 'environment') {
-                 // اگر مقدار 'environment' بود، از facingMode استفاده کن
                  constraints.video.facingMode = 'environment';
              } else {
-                 // اگر مقدار نامعتبری بود، از facingMode استفاده کن
                  constraints.video.facingMode = 'environment';
              }
         } else {
-             // اگر cameraId null بود، از facingMode استفاده کن
              constraints.video.facingMode = 'environment';
         }
 
@@ -100,7 +174,6 @@ document.addEventListener('DOMContentLoaded', async () => {
              videoSettingsObj.facingMode = 'environment';
          }
     } else {
-         // اگر cameraId null بود، به حالت facingMode برمی‌گردیم
          videoSettingsObj.facingMode = 'environment';
     }
     // اضافه کردن سایزهای ایده‌آل به videoSettingsObj
